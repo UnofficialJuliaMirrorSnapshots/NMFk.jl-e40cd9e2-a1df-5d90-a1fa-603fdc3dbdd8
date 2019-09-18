@@ -5,6 +5,12 @@ NMFk: Nonnegative Matrix Factorization using k-means clustering
     <img src="logo/nmfk-logo.png" alt="nmfk" width=25%  max-width=125px;/>
 </div>
 
+**NMFk** is a novel unsupervised machine learning methodology which allows for automatic identification of the optimal number of features (signals) present in the data when NMF (Nonnegative Matrix Factorization) analyses are performed.
+Classical NMF approaches do not allow estimation of the number of features.
+The number of features `k` is estimated through k-means clustering coupled with regularization constraints.
+In addition to feature extraction, **NMFk** allows for data classifications and blind predictions.
+For more details, check the papers and presentations listed below.
+
 ### Installation
 
 After starting Julia, execute:
@@ -27,7 +33,7 @@ Pkg.test("NMFk")
 
 ### Examples
 
-A simple problem demonstrating NMFK can be executed as follows.
+A simple problem demonstrating **NMFk** can be executed as follows.
 First, generate 3 random signals in a matrix `W`:
 
 ```julia
@@ -50,7 +56,7 @@ H = [1 10 0 0 1; 0 1 1 5 2; 3 0 0 1 5]
 X = W * H
 ```
 
-After that execute, NMFk to estimate the number of unknown mixed signals based only on the information in `X`.
+After that execute, **NMFk** to estimate the number of unknown mixed signals based only on the information in `X`.
 
 ```julia
 import NMFk
@@ -91,7 +97,7 @@ NMFk.plotmatrix(H)
 NMFk.plotmatrix(He[kopt] ./ maximum(He[kopt]))
 ```
 
-More examples can be found the in the `test`, `demo`, and `examples` directories of NMFk.
+More examples can be found the in the `test`, `demo`, and `examples` directories of **NMFk**.
 
 ### Publications:
 

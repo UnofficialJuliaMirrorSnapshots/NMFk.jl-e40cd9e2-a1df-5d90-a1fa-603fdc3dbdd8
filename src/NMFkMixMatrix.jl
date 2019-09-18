@@ -1,5 +1,6 @@
 import JuMP
 import Ipopt
+import LinearAlgebra
 import Suppressor
 
 const defaultregularizationweight = convert(Float32, 0)
@@ -86,9 +87,9 @@ function mixmatchdata(concentrations_in::Matrix{Float32}, numbuckets::Int; metho
 		end
 	end
 	if method == :ipopt
-		m = JuMP.Model(JuMP.with_optimizer(Ipopt.Optimizer, max_iter=maxiter, print_level=verbosity)) # tol here is something else
+		m = JuMP.Model(JuMP.with_optimizer(Ipopt.Optimizer; max_iter=maxiter, print_level=verbosity)) # tol here is something else
 	elseif method == :nlopt
-		m = JuMP.Model(JuMP.with_optimizer(NLopt.Optimizer, algorithm=algorithm, maxeval=maxiter)) # xtol_abs=tolX, ftol_abs=tol
+		m = JuMP.Model(JuMP.with_optimizer(NLopt.Optimizer; algorithm=algorithm, maxeval=maxiter)) # xtol_abs=tolX, ftol_abs=tol
 	end
 	@JuMP.variable(m, mixer[i=1:nummixtures, j=1:numbuckets], start = convert(Float32, Winit[i, j]))
 	@JuMP.variable(m, buckets[i=1:numbuckets, j=1:numconstituents], start = convert(Float32, Hinit[i, j]))
@@ -137,7 +138,7 @@ function mixmatchdata(concentrations_in::Matrix{Float32}, numbuckets::Int; metho
 	reattempts = 0
 	frame = 3
 	!quiet && @info("Iteration: $iters Resets: $reattempts Objective function: $of Best: $ofbest")
-	while norm(jumpvalues - JuMP.value.(jumpvariables)) > tolX && ofbest > tol && baditers < maxbaditers && reattempts < maxreattempts
+	while LinearAlgebra.norm(jumpvalues - JuMP.value.(jumpvariables)) > tolX && ofbest > tol && baditers < maxbaditers && reattempts < maxreattempts
 		jumpvalues = JuMP.value.(jumpvariables)
 		if quiet
 			@Suppressor.suppress JuMP.optimize!(m)
@@ -188,7 +189,7 @@ function mixmatchdata(concentrations_in::Matrix{Float32}, numbuckets::Int; metho
 		bucketval[isnb] .= 0
 	end
 	if sum(isnm) > 0 || sum(isnb) > 0
-		@warn("norm: $(norm(concentrations - mixerval * bucketval)) OF: $(ofbest)")
+		@warn("norm: $(LinearAlgebra.norm(concentrations - mixerval * bucketval)) OF: $(ofbest)")
 	end
 	penalty = regularizationweight * sum(log.(1. .+ bucketval).^2) / numbuckets
 	fitquality = ofbest - penalty
@@ -299,9 +300,9 @@ function mixmatchdeltas(concentrations_in::Matrix{Float32}, deltas_in::Matrix{Fl
 		end
 	end
 	if method == :ipopt
-		m = JuMP.Model(solver=Ipopt.IpoptSolver(max_iter=maxiter, print_level=verbosity, tol=tol))
+		m = JuMP.Model(JuMP.with_optimizer(Ipopt.IpoptSolver; max_iter=maxiter, print_level=verbosity, tol=tol))
 	elseif method == :nlopt
-		m = JuMP.Model(solver=NLopt.NLoptSolver(algorithm=algorithm, maxeval=maxiter, xtol_abs=tolX, ftol_abs=tol))
+		m = JuMP.Model(JuMP.with_optimizer(NLopt.NLoptSolver; algorithm=algorithm, maxeval=maxiter, xtol_abs=tolX, ftol_abs=tol))
 	end
 	@JuMP.variable(m, mixer[i=1:nummixtures, j=1:numbuckets], start = convert(Float32, Winit[i, j]))
 	@JuMP.variable(m, buckets[i=1:numbuckets, j=1:numconstituents], start = convert(Float32, Hinit[i, j]))
@@ -343,7 +344,7 @@ function mixmatchdeltas(concentrations_in::Matrix{Float32}, deltas_in::Matrix{Fl
 	ofbest = of
 	iters = 1
 	!quiet && @info("Iteration: $iters Objective function: $of Best: $ofbest")
-	while !(norm(jumpvalues - JuMP.value.(jumpvariables)) < tol) && iters < maxbaditers # keep doing the optimization until we really reach an optimum
+	while !(LinearAlgebra.norm(jumpvalues - JuMP.value.(jumpvariables)) < tol) && iters < maxbaditers # keep doing the optimization until we really reach an optimum
 		jumpvalues = JuMP.value.(jumpvariables)
 		JuMP.optimize!(m)
 		of = JuMP.objective_value(m)
@@ -374,7 +375,7 @@ function mixmatchwaterdeltas(deltas::Matrix{Float32}, numbuckets::Int; method::S
 	deltas = copy(deltas) # we may overwrite some of the fields if there are NaN's, so make a copy
 	nummixtures = size(deltas, 1)
 	numconstituents = 2
-	m = JuMP.Model(solver=Ipopt.IpoptSolver(max_iter=maxiter, print_level=verbosity))
+	m = JuMP.Model(JuMP.with_optimizer(Ipopt.IpoptSolver; max_iter=maxiter, print_level=verbosity))
 	if random
 		@JuMP.variable(m, mixer[1:nummixtures, 1:numbuckets] >= 0., start=randn(Float32))
 		@JuMP.variable(m, buckets[1:numbuckets, 1:numconstituents], start=maxdeltaguess * rand(Float32))
@@ -394,9 +395,9 @@ function mixmatchwaterdeltas(deltas::Matrix{Float32}, numbuckets::Int; method::S
 		regularizationweight * sum(sum((buckets[i, j] - bucketmeans[i, j])^2, i=1:numbuckets) for j=1:numconstituents) / numbuckets +
 		sum(sum(concweights[i, j] * (sum(mixer[i, k] * buckets[k, j] for k=1:numbuckets) - deltas[i, j])^2 for i=1:nummixtures) for j=1:numconstituents))
 	if method == :ipopt
-		m = JuMP.Model(solver=Ipopt.IpoptSolver(max_iter=maxiter, print_level=verbosity, tol=tol))
+		m = JuMP.Model(JuMP.with_optimizer(Ipopt.IpoptSolver; max_iter=maxiter, print_level=verbosity, tol=tol))
 	elseif method == :nlopt
-		m = JuMP.Model(solver=NLopt.NLoptSolver(algorithm=algorithm, maxeval=maxiter, xtol_abs=tolX, ftol_abs=tol))
+		m = JuMP.Model(JuMP.with_optimizer(NLopt.NLoptSolver; algorithm=algorithm, maxeval=maxiter, xtol_abs=tolX, ftol_abs=tol))
 	end
 	JuMP.optimize!(m)
 	mixerval = convert(Array{Float32,2}, JuMP.value.(mixer))

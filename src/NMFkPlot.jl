@@ -1,11 +1,67 @@
 import PyPlot
 import Gadfly
+import Compose
 import Images
 import Colors
 import DataFrames
+import StatsBase
 
 colors = ["red", "blue", "green", "orange", "magenta", "cyan", "brown", "pink", "lime", "navy", "maroon", "yellow", "olive", "springgreen", "teal", "coral", "#e6beff", "beige", "purple", "#4B6F44", "#9F4576"]
 ncolors = length(colors)
+
+function histogram(data::Vector, classes::Vector; joined::Bool=true, proportion::Bool=false, closed::Symbol=:left, quiet::Bool=false, hsize=8Gadfly.inch, vsize=6Gadfly.inch, figuredir::String=".", filename::String="", title::String="", xtitle::String="Truth", ytitle::String="Prediction", ymin=nothing, ymax=nothing, gm=[], opacity::Number=0.3, dpi=imagedpi, xmap=i->i, xlabelmap=nothing, refine=1)
+	ndata = length(data)
+	@assert length(data) == length(classes)
+	histall = StatsBase.fit(StatsBase.Histogram, data; closed=closed)
+	newedges = histall.edges[1][1]:histall.edges[1].step.hi/refine:histall.edges[1][end]
+	xaxis = xmap.(collect(newedges))
+	xmin = minimum(xaxis)
+	xmax = maximum(xaxis)
+	l = []
+	suc = sort(unique(classes))
+	if !joined
+		opacity = 0.9
+	end
+	local ymaxl = 0
+	ccount = Vector{Int64}(undef, length(suc))
+	for (j, ct) in enumerate(suc)
+		i = findall((in)(ct), classes)
+		ccount[j] = length(i)
+		hist = StatsBase.fit(StatsBase.Histogram, data[i], newedges; closed=closed)
+		y = proportion ? hist.weights ./ ndata : hist.weights
+		ymaxl = max(maximum(y), ymaxl)
+		push!(l, Gadfly.layer(xmin=xaxis[1:end-1], xmax=xaxis[2:end], y=y, Gadfly.Geom.bar, Gadfly.Theme(default_color=Colors.RGBA(parse(Colors.Colorant, colors[ct]), opacity))))
+	end
+	ymax = ymax != nothing ? yman : ymaxl
+	s = [Gadfly.Coord.Cartesian(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), Gadfly.Scale.x_continuous(minvalue=xmin, maxvalue=xmax), Gadfly.Guide.xticks(ticks=collect(xaxis)), Gadfly.Guide.XLabel(xtitle), Gadfly.Guide.YLabel(ytitle), gm...]
+	if xlabelmap != nothing
+		s = [s..., Gadfly.Scale.x_continuous(minvalue=xmin, maxvalue=xmax, labels=xlabelmap)]
+	end
+	if joined
+		f = Gadfly.plot(l..., s..., Gadfly.Guide.title(title * ": Count $(ndata)"), Gadfly.Guide.manual_color_key("", ["Type $(suc[i]): $(ccount[i])" for i=1:length(suc)], [colors[i] for i in suc]))
+		!quiet && (display(f); println())
+	else
+		m = []
+		for (i, g) in enumerate(l)
+			push!(m, Gadfly.plot(g, s..., Gadfly.Guide.title(title * " Type $(suc[i]) : $(ccount[i])")))
+		end
+		f = Gadfly.vstack(m...)
+		vsize *= length(suc)
+		gw = Compose.default_graphic_width
+		gh = Compose.default_graphic_height
+		Compose.set_default_graphic_size(gw, gh * length(suc))
+		!quiet && (display(f); println())
+		Compose.set_default_graphic_size(gw, gh)
+	end
+	if filename != ""
+		if !isdir(figuredir)
+			mkdir(figuredir)
+		end
+		recursivemkdir(filename)
+		Gadfly.draw(Gadfly.PNG(joinpath(figuredir, filename), hsize, vsize), f)
+	end
+	return nothing
+end
 
 function plotscatter(df::DataFrames.DataFrame; quiet::Bool=false, hsize=8Gadfly.inch, vsize=6Gadfly.inch, figuredir::String=".", filename::String="", title::String="", xtitle::String="Truth", ytitle::String="Prediction", xmin=nothing, xmax=nothing, ymin=nothing, ymax=nothing, gm=[], dpi=imagedpi)
 	nfeatures = length(unique(sort(df[!, :Attribute])))
@@ -17,21 +73,29 @@ function plotscatter(df::DataFrames.DataFrame; quiet::Bool=false, hsize=8Gadfly.
 	end
 	# label="Well", Gadfly.Geom.point, Gadfly.Geom.label,
 	ff = Gadfly.plot(Gadfly.layer(df, x="Truth", y="Prediction", color="Attribute", Gadfly.Theme(highlight_width=0Gadfly.pt)), Gadfly.layer(x=[minimum(df[!, :Truth]), maximum(df[!, :Truth])], y=[minimum(df[!, :Truth]), maximum(df[!, :Truth])], Gadfly.Geom.line(), Gadfly.Theme(line_width=4Gadfly.pt,default_color="red")), Gadfly.Coord.Cartesian(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), Gadfly.Guide.title(title), Gadfly.Guide.XLabel(xtitle), Gadfly.Guide.YLabel(ytitle), gm..., tc...)
+	gw = Compose.default_graphic_width
+	gh = Compose.default_graphic_height
+	Compose.set_default_graphic_size(gw, gw)
 	!quiet && (display(ff); println())
+	Compose.set_default_graphic_size(gw, gh)
 	if filename != ""
 		if !isdir(figuredir)
 			mkdir(figuredir)
 		end
 		recursivemkdir(filename)
-		Gadfly.draw(Gadfly.PDF(joinpath(figuredir, filename), hsize, vsize), ff)
+		Gadfly.draw(Gadfly.PNG(joinpath(figuredir, filename), hsize, vsize), ff)
 	end
-	return ff
+	return nothing
 end
 
-function plotscatter(x::AbstractVector, y::AbstractVector; quiet::Bool=true, hsize=8Gadfly.inch, vsize=6Gadfly.inch, figuredir::String=".", filename::String="", title::String="", xtitle::String="Truth", ytitle::String="Prediction", xmin=nothing, xmax=nothing, ymin=nothing, ymax=nothing, gm=[], dpi=imagedpi)
+function plotscatter(x::AbstractVector, y::AbstractVector; quiet::Bool=false, hsize=8Gadfly.inch, vsize=6Gadfly.inch, figuredir::String=".", filename::String="", title::String="", xtitle::String="Truth", ytitle::String="Prediction", xmin=nothing, xmax=nothing, ymin=nothing, ymax=nothing, gm=[], dpi=imagedpi)
 	m = [min(x..., y...), max(x..., y...)]
 	ff = Gadfly.plot(Gadfly.layer(x=x, y=y, Gadfly.Theme(highlight_width=0Gadfly.pt,default_color="red")), Gadfly.layer(x=m, y=m, Gadfly.Geom.line(), Gadfly.Theme(line_width=4Gadfly.pt,default_color="gray")), Gadfly.Coord.Cartesian(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), Gadfly.Guide.title(title), Gadfly.Guide.XLabel(xtitle), Gadfly.Guide.YLabel(ytitle), gm...)
+	gw = Compose.default_graphic_width
+	gh = Compose.default_graphic_height
+	Compose.set_default_graphic_size(gw, gw)
 	!quiet && (display(ff); println())
+	Compose.set_default_graphic_size(gw, gh)
 	if filename != ""
 		if !isdir(figuredir)
 			mkdir(figuredir)
@@ -39,7 +103,7 @@ function plotscatter(x::AbstractVector, y::AbstractVector; quiet::Bool=true, hsi
 		recursivemkdir(filename)
 		Gadfly.draw(Gadfly.PDF(joinpath(figuredir, filename), hsize, vsize), ff)
 	end
-	return ff
+	return nothing
 end
 
 function plotbars(V::AbstractVector, A::AbstractVector; quiet::Bool=false, hsize=8Gadfly.inch, vsize=4Gadfly.inch, major_label_font_size=12Gadfly.pt, minor_label_font_size=10Gadfly.pt, figuredir::String=".", filename::String="", title::String="", xtitle::String="", ytitle::String="", gm=[], dpi=imagedpi)

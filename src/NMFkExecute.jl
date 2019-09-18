@@ -21,7 +21,7 @@ function execute(X::AbstractArray{T,N}, nkrange::AbstractRange{Int}, nNMF::Integ
 		println("Signals: $(@sprintf("%2d", nk)) Fit: $(@sprintf("%12.7g", fitquality[nk])) Silhouette: $(@sprintf("%12.7g", robustness[nk])) AIC: $(@sprintf("%12.7g", aic[nk]))")
 	end
 	kn = findlast(i->i > 0.25, robustness)
-	k = (kn == nothing) ? findmax(robustness)[2] + min(nkrange...) - 1 : kn
+	k = (kn == nothing) ? findmax(robustness)[2] : kn
 	@info("Optimal solution: $k signals")
 	return W, H, fitquality, robustness, aic, k
 end
@@ -149,9 +149,9 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 	idxsol = idxrat .& idxcut .& idxnan
 	if sum(idxsol) < nNMF
 		println("NMF solutions removed based on acceptance criteria: $(sum(idxsol)) out of $(nNMF) solutions remain")
-		println("OF: min $(minimum(objvalue)) max $(maximum(objvalue)) mean $(mean(objvalue)) std $(std(objvalue)) (ALL)")
+		println("OF: min $(minimum(objvalue)) max $(maximum(objvalue)) mean $(Statistics.mean(objvalue)) std $(Statistics.std(objvalue)) (ALL)")
 	end
-	println("OF: min $(minimum(objvalue[idxsol])) max $(maximum(objvalue[idxsol])) mean $(mean(objvalue[idxsol])) std $(std(objvalue[idxsol]))")
+	println("OF: min $(minimum(objvalue[idxsol])) max $(maximum(objvalue[idxsol])) mean $(Statistics.mean(objvalue[idxsol])) std $(Statistics.std(objvalue[idxsol]))")
 	Xe = NMFk.mixmatchcompute(X, Wbest, Hbest)
 	minsilhouette = 1
 	if nk > 1
@@ -173,7 +173,7 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 		if !quiet
 			@info("Silhouettes for each of the $nk clusters:" )
 			display(clustersilhouettes')
-			println("Mean silhouette = ", mean(clustersilhouettes))
+			println("Mean silhouette = ", Statistics.mean(clustersilhouettes))
 			println("Min  silhouette = ", minimum(clustersilhouettes))
 		end
 	else
@@ -374,9 +374,9 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 	idxsol = idxrat .& idxcut .& idxnan
 	if sum(idxsol) < nNMF
 		println("NMF solutions removed based on various criteria: $(sum(idxsol)) out of $(nNMF) solutions remain")
-		println("OF: min $(minimum(objvalue)) max $(maximum(objvalue)) mean $(mean(objvalue)) std $(std(objvalue)) (ALL)")
+		println("OF: min $(minimum(objvalue)) max $(maximum(objvalue)) mean $(Statistics.mean(objvalue)) std $(Statistics.std(objvalue)) (ALL)")
 	end
-	println("OF: min $(minimum(objvalue[idxsol])) max $(maximum(objvalue[idxsol])) mean $(mean(objvalue[idxsol])) std $(std(objvalue[idxsol]))")
+	println("OF: min $(minimum(objvalue[idxsol])) max $(maximum(objvalue[idxsol])) mean $(Statistics.mean(objvalue[idxsol])) std $(Statistics.std(objvalue[idxsol]))")
 	for i in 1:nNMF
 		of = ssqrnan(X - WBig[i] * HBig[i])
 		if abs(of - objvalue[i]) / of > 1e-4
@@ -413,7 +413,7 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 		if !quiet
 			@info("Silhouettes for each of the $nk clusters:" )
 			display(permutedims(clustersilhouettes))
-			println("Mean silhouette = ", mean(clustersilhouettes))
+			println("Mean silhouette = ", Statistics.mean(clustersilhouettes))
 			println("Min  silhouette = ", minimum(clustersilhouettes))
 		end
 	else

@@ -1,5 +1,6 @@
 import DocumentFunction
 import Statistics
+import LinearAlgebra
 
 """
 Set image dpi
@@ -12,15 +13,15 @@ end
 
 toupper(x::String, i=1) = x[1:i-1] * uppercase(x[i:i]) * x[i+1:end]
 
-function maximumnan(X; functionname="isnan", kw...)
-	i = Core.eval(NMFk, Meta.parse(functionname)).(X)
-	maximum(X[.!i]; kw...)
-end
-
 function r2(x::Vector, y::Vector)
 	# rho = Statistics.cov(x, y) / (Statistics.std(x) * Statistics.std(y))
 	# r2 = (1 - sum((x .- y).^2) / sum((x .- Statistics.mean(x)).^2))
 	(sum((x .- Statistics.mean(x)) .* (y .- Statistics.mean(y)))/sqrt(sum((x .- Statistics.mean(x)).^2 .* sum((y .- Statistics.mean(y)).^2))))^2
+end
+
+function maximumnan(X; functionname="isnan", kw...)
+	i = Core.eval(NMFk, Meta.parse(functionname)).(X)
+	maximum(X[.!i]; kw...)
 end
 
 function minimumnan(X; functionname="isnan", kw...)
@@ -43,18 +44,22 @@ function sumnan(X, c=nothing; kw...)
 	end
 end
 
+function meannan(X)
+	Statistics.mean(X[.!isnan.(X)])
+end
+
 function ssqrnan(X)
 	sum(X[.!isnan.(X)].^2)
 end
 
 function normnan(X)
-	norm(X[.!isnan.(X)])
+	LinearAlgebra.norm(X[.!isnan.(X)])
 end
 
 function cornan(x, y)
 	isn = .!(isnan.(x) .| isnan.(y))
 	if length(x) > 0 && length(y) > 0 && sum(isn) > 1
-		return cov(x[isn], y[isn])
+		return Statistics.cov(x[isn], y[isn])
 	else
 		return NaN
 	end
@@ -212,4 +217,12 @@ end
 
 function remask(sm, repeats::Vector{Int64})
 	return reshape(repeat(sm, 1, *(repeats...)), (size(sm)..., repeats...))
+end
+
+function bincount(x::Vector; cutoff=0)
+	n = unique(sort(x))
+	c = map(i->sum(x .== i), n)
+	i = sortperm(c; rev=true)
+	j = c[i] .> cutoff
+	return [n[i][j] c[i][j]]
 end
