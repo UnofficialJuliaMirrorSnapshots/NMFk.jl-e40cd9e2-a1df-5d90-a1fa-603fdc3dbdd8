@@ -1,7 +1,7 @@
 name = "NMFk"
 uuid = "e40cd9e2-a1df-5d90-a1fa-603fdc3dbdd8"
 authors = ["Velimir V Vesselinov (monty) <velimir.vesselinov@gmail.com>"]
-version = "0.1.3"
+version = "0.1.5"
 
 [deps]
 Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
@@ -27,6 +27,7 @@ MultivariateStats = "6f286f6a-111f-5878-ab1e-185364afe411"
 NLopt = "76087f3c-5699-56af-9a33-bf431cd00edd"
 NMF = "6ef6ca0d-6ad7-5ff6-b225-e928bfa0a386"
 Pkg = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+PlotlyJS = "f0f68f2c-4968-5e81-91da-67840de0976a"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
 PyPlot = "d330b81b-6aea-500a-939a-2ce795aea3ee"
