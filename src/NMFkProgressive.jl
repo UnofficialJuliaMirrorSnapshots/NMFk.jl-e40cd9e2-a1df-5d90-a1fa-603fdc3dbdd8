@@ -1,4 +1,5 @@
 function checkarray(X::Array{T,N}, cutoff::Integer=0; func::Function=i->i>0, funcfirst::Function=func, funclast::Function=func) where {T, N}
+	md = Array{Int64}(undef, N)
 	for d = 1:N
 		@info("Dimension $d")
 		dd = size(X, d)
@@ -7,11 +8,15 @@ function checkarray(X::Array{T,N}, cutoff::Integer=0; func::Function=i->i>0, fun
 		for i = 1:dd
 			nt = ntuple(k->(k == d ? i : Colon()), N)
 			firstentry = findfirst(funcfirst.(X[nt...]))
-			lastentry = findlast(funclast.(X[nt...]))
-			if lastentry == nothing || firstentry == nothing
-				l[i] = 0
+			if firstentry != nothing
+				lastentry = findlast(funclast.(X[nt...]))
+				if lastentry != nothing
+					l[i] = lastentry - firstentry + 1
+				else
+					l[i] = 0
+				end
 			else
-				l[i] = lastentry - firstentry + 1
+				l[i] = 0
 			end
 			if l[i] <= cutoff
 				push!(e, i)
@@ -21,36 +26,10 @@ function checkarray(X::Array{T,N}, cutoff::Integer=0; func::Function=i->i>0, fun
 		ir = sortperm(l)
 		@show l[ir][1:15]
 		@show l[ir][end-15:end]
+		md[d] = length(e) > 0 ? e[1] : 0
+		@show maximum(l)
 	end
-end
-
-function getdatawindow(X::Array{T,N}, d::Integer; func::Function=.!isnan, funcfirst::Function=func, funclast::Function=func, start::Vector{Int64}=Vector{Int64}(undef, 0)) where {T, N}
-	@assert d >= 1 && d <= N
-	dd = size(X, d)
-	if length(start) > 0
-		@assert length(start) == dd
-		endd = size(X)
-	end
-	afirstentry = Vector{Int64}(undef, dd)
-	alastentry = Vector{Int64}(undef, dd)
-	l = Vector{Int64}(undef, dd)
-	for i = 1:dd
-		if length(start) == 0
-			nt = ntuple(k->(k == d ? i : Colon()), N)
-		else
-			nt = ntuple(k->(k == d ? i : Base.Slice(start[i]:endd[k])), N)
-		end
-		firstentry = findfirst(funcfirst.(X[nt...]))
-		if firstentry != nothing
-			lastentry = findlast(funclast.(X[nt...]))
-			l[i] = lastentry - firstentry + 1
-			afirstentry[i] = firstentry
-			alastentry[i] = lastentry
-		else
-			afirstentry[i] = alastentry[i] = l[i] = 0
-		end
-	end
-	return afirstentry, alastentry, l
+	return md
 end
 
 function checkarray_zeros(X::Array{T,N}) where {T, N}
@@ -104,8 +83,12 @@ function progressive(X::Matrix{T}, windowsize::Vector{Int64}, nkrange::AbstractR
 	for ws in windowsize
 		@info("NMFk #1: $(casefilename) Window $ws")
 		W, H, fitquality, robustness, aic = NMFk.execute(X[1:ws,:], nkrange, nNMF1; casefilename="$(casefilename)_$(ws)", load=load, kw...)
-		kn = findlast(i->i > 0.25, robustness)
-		k = (kn == nothing) ? findmax(robustness)[2] : kn
+		if length(nkrange) == 1
+			k = nkrange[1]
+		else
+			kn = findlast(i->i > 0.25, robustness)
+			k = (kn == nothing) ? findmax(robustness)[2] : kn
+		end
 		push!(window_k, k)
 		@info("NMFk #2: $(casefilename) Window $ws: Best $k")
 		if ws < size(X, 1)
