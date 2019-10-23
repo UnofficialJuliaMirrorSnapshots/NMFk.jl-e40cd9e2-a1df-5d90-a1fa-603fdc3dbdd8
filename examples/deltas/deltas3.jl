@@ -1,19 +1,21 @@
 import NMFk
 import LinearAlgebra
+import Random
 
 cs = Float64[]
 ds = Float64[]
 for i = 1:100
+	Random.seed!(i)
 	nummixtures = 20
 	numbuckets = 2
-	numconstituents = 3
+	numconstituents = 2
 	mixer = rand(nummixtures, numbuckets)
 	for i = 1:nummixtures
 		mixer[i, :] /= sum(mixer[i, :])
 	end
-	buckets = [100 0 3 50; 5 10 20 6]
-	bucketdeltas = [-10 3 0; -4 5 7]
-	deltaindices = [1, 3, 4]
+	buckets = [1 0; 0 1]
+	bucketdeltas = permutedims([1 0])
+	deltaindices = Int[1]
 	concentrations = mixer * buckets
 	deltas = NMFk.computedeltas(mixer, buckets, bucketdeltas, deltaindices)
 
@@ -24,7 +26,7 @@ for i = 1:100
 	display(deltas)
 	=#
 
-	fitmixer, fitbuckets, fitbucketdeltas, fitquality = NMFk.matchdata(concentrations, deltas, deltaindices, 2; deltaweightsfactor=1, verbosity=1)
+	fitmixer, fitbuckets, fitbucketdeltas, fitquality = NMFk.mixmatchdeltas(concentrations, deltas, deltaindices, 2)
 	fitdeltas = NMFk.computedeltas(fitmixer, fitbuckets, fitbucketdeltas, deltaindices)
 
 	#=

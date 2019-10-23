@@ -4,7 +4,7 @@ import LinearAlgebra
 import Suppressor
 
 "Match data with concentrations and an option for ratios (avoid using ratios; convert to concentrations)"
-function mixmatchdata(concentrations::AbstractArray{T, 3}, numbuckets::Int; method::Symbol=:ipopt, algorithm::Symbol=:LD_SLSQP, normalize::Bool=false, scale::Bool=false, maxH::Bool=false, ratios::AbstractArray{T, 2}=Array{T}(undef, 0, 0), ratioindices::Union{Array{Int, 1},Array{Int, 2}}=Array{Int}(undef. 0, 0), seed::Number=-1, random::Bool=true, maxiter::Int=defaultmaxiter, verbosity::Int=defaultverbosity, regularizationweight::T=defaultregularizationweight, ratiosweight::T=defaultratiosweight, weightinverse::Bool=false, Winit::Matrix{T}=Array{T}(undef, 0, 0), Hinit::Matrix{T}=Array{T}(undef, 0, 0), tolX::Float64=1e-3, tol::Float64=1e-3, tolOF::Float64=1e-3, maxreattempts::Int=1, maxbaditers::Int=5, quiet::Bool=NMFk.quiet, movie::Bool=false, moviename::AbstractString="", movieorder=1:numbuckets) where {T <:Float32}
+function mixmatchdata(concentrations::AbstractArray{T, 3}, numbuckets::Int; method::Symbol=:ipopt, algorithm::Symbol=:LD_SLSQP, normalize::Bool=false, scale::Bool=false, maxH::Bool=false, ratios::AbstractArray{T, 2}=Array{T}(undef, 0, 0), ratioindices::Union{Array{Int, 1},Array{Int, 2}}=Array{Int}(undef, 0, 0), seed::Number=-1, random::Bool=true, maxiter::Int=defaultmaxiter, verbosity::Int=defaultverbosity, regularizationweight::T=convert(T, defaultregularizationweight), ratiosweight::T=convert(T, defaultratiosweight), weightinverse::Bool=false, Winit::Matrix{T}=Array{T}(undef, 0, 0), Hinit::Matrix{T}=Array{T}(undef, 0, 0), tolX::Float64=1e-3, tol::Float64=1e-3, tolOF::Float64=1e-3, maxreattempts::Int=1, maxbaditers::Int=5, quiet::Bool=NMFk.quiet, movie::Bool=false, moviename::AbstractString="", movieorder=1:numbuckets) where {T <: Float32}
 	if seed >= 0
 		Random.seed!(seed)
 	end
@@ -17,8 +17,8 @@ function mixmatchdata(concentrations::AbstractArray{T, 3}, numbuckets::Int; meth
 	end
 	nummixtures, numconstituents, ntimes = size(concentrations)
 	nans = isnan.(concentrations)
-	concweights[nans] = 0
-	concentrations[nans] = 0
+	concweights[nans] .= 0
+	concentrations[nans] .= 0
 	if normalize
 		concentrations, cmin, cmax = normalizearrar!(concentrations)
 	elseif scale
@@ -45,9 +45,9 @@ function mixmatchdata(concentrations::AbstractArray{T, 3}, numbuckets::Int; meth
 		end
 	end
 	if method == :ipopt
-		m = JuMP.Model(JuMP.with_optimizer(Ipopt.IpoptSolver; max_iter=maxiter, print_level=verbosity)) # tol here is something else
+		m = JuMP.Model(JuMP.with_optimizer(Ipopt.Optimizer; max_iter=maxiter, print_level=verbosity)) # tol here is something else
 	elseif method == :nlopt
-		m = JuMP.Model(JuMP.with_optimizer(NLopt.NLoptSolver; algorithm=algorithm, maxeval=maxiter)) # xtol_abs=tolX, ftol_abs=tol
+		m = JuMP.Model(JuMP.with_optimizer(NLopt.Optimizer; algorithm=algorithm, maxeval=maxiter)) # xtol_abs=tolX, ftol_abs=tol
 	end
 	@JuMP.variable(m, mixer[i=1:nummixtures, j=1:numbuckets, k=1:ntimes], start = convert(T, Winit[i, j, k]))
 	@JuMP.variable(m, buckets[i=1:numbuckets, j=1:numconstituents], start = convert(T, Hinit[i, j]))
@@ -112,9 +112,9 @@ function mixmatchdata(concentrations::AbstractArray{T, 3}, numbuckets::Int; meth
 		end
 		!quiet && @info("Iteration: $iters Resets: $reattempts Objective function: $of Best: $ofbest")
 	end
-	concentrations[nans] = NaN
-	fitquality = ofbest - regularizationweight * sum(log.(1. + H).^2) / numbuckets
-	setbadmixerelements!(concentrations, W)
+	concentrations[nans] .= NaN
+	fitquality = ofbest - regularizationweight * sum(log.(1. .+ H).^2) / numbuckets
+	# setbadmixerelements!(concentrations, W, H) this is not needed
 	if normalize
 		H = denormalizematrix!(H, W, cmin, cmax)
 	elseif scale
@@ -123,12 +123,15 @@ function mixmatchdata(concentrations::AbstractArray{T, 3}, numbuckets::Int; meth
 	return abs.(W), abs.(H), fitquality
 end
 
-function setbadmixerelements!(X::AbstractArray, W::AbstractArray)
+function setbadmixerelements!(X::AbstractArray, W::AbstractArray, H::AbstractArray) # this function is not needed
 	nw, nc, nt = size(X)
 	for t = 1:nt
 		for w = 1:nw
-			if !any(.!isnan.(X[w, :, t]))
-				W[w, :, t] = NaN
+			@show X[w, :, t]
+			Xe = mixmatchcompute(X, W, H)
+			@show Xe[w, :, t]
+			if any(.!isnan.(X[w, :, t]))
+				W[w, :, t] .= NaN
 			end
 		end
 	end
@@ -152,7 +155,7 @@ function mixmatchcompute(X::AbstractArray{T, 3}, W::AbstractArray{T, 3}, H::Abst
 			end
 		end
 	end
-	Xe[isn] = NaN
+	Xe[isn] .= NaN
 	return convert(AbstractArray{T, 3}, Xe)
 end
 
@@ -178,7 +181,7 @@ function fixmixers!(X::AbstractArray{T, 3}, W::AbstractArray{T, 3}) where {T}
 	for t = 1:nt
 		for w = 1:nw
 			if !any(.!isnan.(X[w,:,t]))
-				W[w,:,t] = NaN
+				W[w,:,t] .= NaN
 			end
 		end
 	end

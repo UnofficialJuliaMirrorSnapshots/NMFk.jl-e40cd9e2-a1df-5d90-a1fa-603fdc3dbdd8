@@ -58,7 +58,7 @@ function execute(X::Union{AbstractMatrix,AbstractArray}, nk::Integer, nNMF::Inte
 end
 
 "Execute NMFk analysis for a given number of signals in serial or parallel"
-function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=false, acceptratio::Number=1, acceptfactor::Number=Inf, quiet::Bool=NMFk.quiet, best::Bool=true, serial::Bool=false, method::Symbol=:nmf, algorithm::Symbol=:multdiv, casefilename::AbstractString="", loadall::Bool=false, saveall::Bool=false, kw...)
+function execute_run(X::AbstractArray{T,N}, nk::Int, nNMF::Int; clusterWmatrix::Bool=false, acceptratio::Number=1, acceptfactor::Number=Inf, quiet::Bool=NMFk.quiet, best::Bool=true, serial::Bool=false, method::Symbol=:nmf, algorithm::Symbol=:multdiv, casefilename::AbstractString="", loadall::Bool=false, saveall::Bool=false, kw...) where {T, N}
 	# ipopt=true is equivalent to mixmatch = true && mixtures = false
 	!quiet && @info("NMFk analysis of $nNMF NMF runs assuming $nk signals (sources) ...")
 	indexnan = isnan.(X)
@@ -90,7 +90,7 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 				WBig[i] = r[i][1]
 				HBig[i] = r[i][2]
 			end
-			objvalue = map(i->convert(Float32, r[i][3]), 1:nNMF)
+			objvalue = map(i->convert(T, r[i][3]), 1:nNMF)
 		else
 			WBig = Vector{Array}(undef, nNMF)
 			HBig = Vector{Matrix}(undef, nNMF)
@@ -120,6 +120,7 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 	!quiet && println("Worst objective function = $(objvalue[idxsort[end]])")
 	Wbest = copy(WBig[bestIdx])
 	Hbest = copy(HBig[bestIdx])
+	Xe = NMFk.mixmatchcompute(X, Wbest, Hbest)
 	println()
 	if acceptratio < 1
 		ccc = convert(Int, (ceil(nNMF * acceptratio)))
@@ -137,9 +138,10 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 	end
 	idxnan = trues(nNMF)
 	for i in 1:nNMF
-		if sum(isnan.(WBig[i])) > 0
+		if clusterWmatrix && sum(isnan.(WBig[i])) > 0
 			idxnan[idxsort[i]] = false
-		elseif sum(isnan.(HBig[i])) > 0
+		end
+		if !clusterWmatrix && sum(isnan.(HBig[i])) > 0
 			idxnan[idxsort[i]] = false
 		end
 	end
@@ -148,42 +150,50 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 	end
 	idxsol = idxrat .& idxcut .& idxnan
 	if sum(idxsol) < nNMF
-		println("NMF solutions removed based on acceptance criteria: $(sum(idxsol)) out of $(nNMF) solutions remain")
+		@warn("NMF solutions removed based on acceptance criteria: $(sum(idxsol)) out of $(nNMF) solutions remain")
 		println("OF: min $(minimum(objvalue)) max $(maximum(objvalue)) mean $(Statistics.mean(objvalue)) std $(Statistics.std(objvalue)) (ALL)")
 	end
-	println("OF: min $(minimum(objvalue[idxsol])) max $(maximum(objvalue[idxsol])) mean $(Statistics.mean(objvalue[idxsol])) std $(Statistics.std(objvalue[idxsol]))")
-	Xe = NMFk.mixmatchcompute(X, Wbest, Hbest)
-	minsilhouette = 1
-	if nk > 1
-		clusterweights = false
-		clusterassignments, M = NMFk.clustersolutions(HBig[idxsort][idxsol], clusterweights) # cluster based on the sources
-		if !quiet
-			@info("Cluster assignments:")
-			display(clusterassignments)
-			@info("Cluster centroids:")
-			display(M)
+	minsilhouette = -1
+	if sum(idxnan) > 0
+		println("OF: min $(minimum(objvalue[idxsol])) max $(maximum(objvalue[idxsol])) mean $(Statistics.mean(objvalue[idxsol])) std $(Statistics.std(objvalue[idxsol]))")
+		if nk > 1
+			clusterWmatrix = false
+			clusterassignments, M = NMFk.clustersolutions(HBig[idxsort][idxsol], clusterWmatrix) # cluster based on the sources
+			if !quiet
+				@info("Cluster assignments:")
+				display(clusterassignments)
+				@info("Cluster centroids:")
+				display(M)
+			end
+			ci = clusterassignments[:, 1]
+			for (i, c) in enumerate(ci)
+				if N == 2
+					Wbest[:, i] = WBig[bestIdx][:, c]
+					Hbest[i, :] = HBig[bestIdx][c, :]
+				else
+					nti = ntuple(k->(k == 2 ? i : Colon()), N)
+					ntc = ntuple(k->(k == 2 ? c : Colon()), N)
+					Wbest[nti...] = WBig[bestIdx][ntc...]
+					Hbest[i, :] = HBig[bestIdx][c, :]
+				end
+			end
+			Wa, Ha, clustersilhouettes, Wv, Hv = NMFk.finalize(WBig[idxsort][idxsol], HBig[idxsort][idxsol], clusterassignments, clusterWmatrix)
+			minsilhouette = minimum(clustersilhouettes)
+			if !quiet
+				@info("Silhouettes for each of the $nk clusters:" )
+				display(permutedims(clustersilhouettes))
+				println("Mean silhouette = ", Statistics.mean(clustersilhouettes))
+				println("Min  silhouette = ", minimum(clustersilhouettes))
+			end
+		else
+			Wv = NaN
+			Hv = NaN
+			Wa, Ha = NMFk.finalize(WBig[idxsol], HBig[idxsol])
 		end
-		ci = clusterassignments[:, 1]
-		for (i, c) in enumerate(ci)
-			Wbest[:, i] = WBig[bestIdx][:, c]
-			Hbest[i, :] = HBig[bestIdx][c, :]
+		if saveall && casefilename != ""
+			filename = "$casefilename-$nk-$nNMF-all.jld"
+			JLD.save(filename, "W", WBig, "H", HBig, "Wmean", Wa, "Hmean", Ha, "Wvar", Wv, "Hvar", Hv, "Wbest", Wbest, "Hbest", Hbest, "fit", objvalue)
 		end
-		Wa, Ha, clustersilhouettes, Wv, Hv = NMFk.finalize(WBig[idxsort][idxsol], HBig[idxsort][idxsol], clusterassignments, clusterweights)
-		minsilhouette = minimum(clustersilhouettes)
-		if !quiet
-			@info("Silhouettes for each of the $nk clusters:" )
-			display(clustersilhouettes')
-			println("Mean silhouette = ", Statistics.mean(clustersilhouettes))
-			println("Min  silhouette = ", minimum(clustersilhouettes))
-		end
-	else
-		Wv = NaN
-		Hv = NaN
-		Wa, Ha = NMFk.finalize(WBig[idxsol], HBig[idxsol])
-	end
-	if saveall && casefilename != ""
-		filename = "$casefilename-$nk-$nNMF-all.jld"
-		JLD.save(filename, "W", WBig, "H", HBig, "Wmean", Wa, "Hmean", Ha, "Wvar", Wv, "Hvar", Hv, "Wbest", Wbest, "Hbest", Hbest, "fit", objvalue)
 	end
 	if best
 		Wa = Wbest
@@ -194,10 +204,11 @@ function execute_run(X::AbstractArray, nk::Int, nNMF::Int; clusterweights::Bool=
 	numparameters = *(collect(size(Wa))...) + *(collect(size(Ha))...)
 	numparameters -= (size(Wa)[1] + size(Wa)[3])
 	aic = 2 * numparameters + numobservations * log(phi_final/numobservations)
-	!quiet && println("Objective function = ", phi_final, " Max error = ", maximum(E), " Min error = ", minimum(E))
+	E = X .- Xe
+	!quiet && println("Objective function = ", phi_final, " Max error = ", maximumnan(E), " Min error = ", minimumnan(E))
 	return Wa, Ha, phi_final, minsilhouette, aic
 end
-function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool=false, acceptratio::Number=1, acceptfactor::Number=Inf, quiet::Bool=NMFk.quiet, best::Bool=true, transpose::Bool=false, serial::Bool=false, deltas::AbstractArray{Float32, 2}=Array{Float32}(undef, 0, 0), ratios::AbstractArray{Float32, 2}=Array{Float32}(undef, 0, 0), mixture::Symbol=:null, method::Symbol=:null, algorithm::Symbol=:multdiv, casefilename::AbstractString="", nanaction::Symbol=:zeroed, loadall::Bool=false, saveall::Bool=false, kw...)
+function execute_run(X::AbstractMatrix{T}, nk::Int, nNMF::Int; clusterWmatrix::Bool=false, acceptratio::Number=1, acceptfactor::Number=Inf, quiet::Bool=NMFk.quiet, best::Bool=true, transpose::Bool=false, serial::Bool=false, deltas::AbstractArray{T, 2}=Array{T}(undef, 0, 0), ratios::AbstractArray{T, 2}=Array{T}(undef, 0, 0), mixture::Symbol=:null, method::Symbol=:null, algorithm::Symbol=:multdiv, casefilename::AbstractString="", nanaction::Symbol=:zeroed, loadall::Bool=false, saveall::Bool=false, kw...) where {T}
 	kw_dict = Dict()
 	for (key, value) in kw
 		kw_dict[key] = value
@@ -222,10 +233,8 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 		end
 	end
 	if mixture != :null
-		clusterweights = true
-		if method == :nmf
-			method = :ipopt
-		end
+		clusterWmatrix = true
+		method = :ipopt
 	end
 	if method == :nlopt && algorithm == :multdiv
 		algorithm = :LD_SLSQP
@@ -242,6 +251,7 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 	end
 	if !quiet
 		if mixture == :mixmatch
+			method = :ipopt
 			print("MixMatch using ")
 		elseif mixture == :matchwaterdeltas
 			print("MixMatchDeltas using ")
@@ -298,7 +308,7 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 				WBig[i] = r[i][1]
 				HBig[i] = r[i][2]
 			end
-			objvalue = map(i->convert(Float32, r[i][3]), 1:nNMF)
+			objvalue = map(i->convert(T, r[i][3]), 1:nNMF)
 		else
 			WBig = Vector{Matrix}(undef, nNMF)
 			HBig = Vector{Matrix}(undef, nNMF)
@@ -391,10 +401,10 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 	println("Worst norm by rows: $(maximum(map(i->(normnan(X[:, i] - Xe[:, i])/fn), 1:size(X, 2))))")
 	minsilhouette = 1
 	if nk > 1
-		if clusterweights
-			clusterassignments, M = NMFk.clustersolutions(WBig[idxsort][idxsol], clusterweights) # cluster based on the W
+		if clusterWmatrix
+			clusterassignments, M = NMFk.clustersolutions(WBig[idxsort][idxsol], clusterWmatrix) # cluster based on the W
 		else
-			clusterassignments, M = NMFk.clustersolutions(HBig[idxsort][idxsol], clusterweights) # cluster based on the sources
+			clusterassignments, M = NMFk.clustersolutions(HBig[idxsort][idxsol], clusterWmatrix) # cluster based on the sources
 		end
 		if !quiet
 			@info("Cluster assignments:")
@@ -408,7 +418,7 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 			Hbest[i, :] = HBig[bestIdx][c, :]
 		end
 		Xe = Wbest * Hbest
-		Wa, Ha, clustersilhouettes, Wv, Hv = NMFk.finalize(WBig[idxsort][idxsol], HBig[idxsort][idxsol], clusterassignments, clusterweights)
+		Wa, Ha, clustersilhouettes, Wv, Hv = NMFk.finalize(WBig[idxsort][idxsol], HBig[idxsort][idxsol], clusterassignments, clusterWmatrix)
 		minsilhouette = minimum(clustersilhouettes)
 		if !quiet
 			@info("Silhouettes for each of the $nk clusters:" )
@@ -479,7 +489,7 @@ function execute_run(X::AbstractMatrix, nk::Int, nNMF::Int; clusterweights::Bool
 	# sml = dof + numobservations * (log(fitquality[numbuckets]/dof) / 2 + 1.837877)
 	# aic[numbuckets] = sml + 2 * numparameters
 	aic = 2 * numparameters + numobservations * log(phi_final/numobservations)
-	!quiet && println("Objective function = ", phi_final, " Max error = ", maximum(E), " Min error = ", minimum(E) )
+	!quiet && println("Objective function = ", phi_final, " Max error = ", maximumnan(E), " Min error = ", minimumnan(E) )
 	return Wa, Ha, phi_final, minsilhouette, aic
 end
 
@@ -498,7 +508,7 @@ function execute_singlerun_compute(X::AbstractArray, nk::Int; kw...)
 end
 
 "Execute single NMF run without restart"
-function execute_singlerun_compute(X::AbstractMatrix, nk::Int; quiet::Bool=NMFk.quiet, ratios::AbstractArray{Float32, 2}=Array{Float32}(undef, 0, 0), ratioindices::Union{AbstractArray{Int, 1},AbstractArray{Int, 2}}=Array{Int}(undef, 0, 0), deltas::AbstractArray{Float32, 2}=Array{Float32}(undef, 0, 0), deltaindices::AbstractArray{Int, 1}=Array{Int}(undef, 0), best::Bool=true, normalize::Bool=false, scale::Bool=false, maxiter::Int=10000, tol::Float64=1e-19, ratiosweight::Float32=convert(Float32, 1), weightinverse::Bool=false, transpose::Bool=false, mixture::Symbol=:null, rescalematrices::Bool=true, method::Symbol=:nmf, algorithm::Symbol=:multdiv, clusterweights::Bool=false, bootstrap::Bool=false, kw...)
+function execute_singlerun_compute(X::AbstractMatrix{T}, nk::Int; quiet::Bool=NMFk.quiet, ratios::AbstractArray{T, 2}=Array{T}(undef, 0, 0), ratioindices::Union{AbstractArray{Int, 1},AbstractArray{Int, 2}}=Array{Int}(undef, 0, 0), deltas::AbstractArray{T, 2}=Array{T}(undef, 0, 0), deltaindices::AbstractArray{Int, 1}=Array{Int}(undef, 0), best::Bool=true, normalize::Bool=false, scale::Bool=false, maxiter::Int=10000, tol::Float64=1e-19, ratiosweight::T=convert(T, 1), weightinverse::Bool=false, transpose::Bool=false, mixture::Symbol=:null, rescalematrices::Bool=true, method::Symbol=:nmf, algorithm::Symbol=:multdiv, clusterWmatrix::Bool=false, bootstrap::Bool=false, kw...) where {T}
 	if scale
 		if transpose
 			Xn = permutedims(Xn)
@@ -560,10 +570,12 @@ function execute_singlerun_compute(X::AbstractMatrix, nk::Int; quiet::Bool=NMFk.
 			E = X - W * H
 		end
 		objvalue = sum(E.^2)
+	else
+		E = X - W * H
 	end
 	!quiet && println("Objective function = $(objvalue)")
 	if mixture == :null && rescalematrices
-		if clusterweights
+		if clusterWmatrix
 			total = sum(W; dims=1)
 			W ./= total
 			H .*= permutedims(total)

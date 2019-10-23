@@ -9,15 +9,15 @@ wellmixing = convert(Array{Float32,2}, rand(nWells, nSources))
 for i = 1:nWells
 	wellmixing[i, :] /= sum(wellmixing[i, :])
 end
-sourceconcentrations = [100. 0. 3. 50.; 5. 10. 20. 6.]
-sourcedeltas = [-10. 3. 0.; -4. 5. 7.]
+sourceconcentrations = convert(Array{Float32,2}, [100 0 3 50; 5 10 20 6])
+sourcedeltas = convert(Array{Float32,2}, [-10 3 0; -4 5 7])
 @info("Source concentrations")
 display(sourceconcentrations)
 @info("Source deltas")
 display(sourcedeltas)
 deltaindices = [1, 3, 4]
-concentrations = wellmixing * sourceconcentrations
-deltas = NMFk.computedeltas(wellmixing, sourceconcentrations, sourcedeltas, deltaindices)
+concentrations = convert(Array{Float32,2}, wellmixing * sourceconcentrations)
+deltas = convert(Array{Float32,2}, NMFk.computedeltas(wellmixing, sourceconcentrations, sourcedeltas, deltaindices))
 
 @info("Concentrations")
 display(concentrations)
